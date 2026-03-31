@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { getSupabase } from '@/lib/supabase-browser';
 import TeamManager from './TeamManager';
 
-export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onNew }) {
+export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onNew, onImportJSON }) {
   const { user } = useAuth();
   const [scenarios, setScenarios] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -97,6 +97,9 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
         <div className="drawer-content">
           <button className="drawer-new-btn" onClick={onNew}>
             + New scenario
+          </button>
+          <button className="drawer-new-btn" style={{ marginTop: 0 }} onClick={onImportJSON}>
+            ↑ Import JSON
           </button>
 
           {loading && (

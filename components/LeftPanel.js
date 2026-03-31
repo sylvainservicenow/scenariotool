@@ -109,7 +109,6 @@ export default function LeftPanel({ open, onClose, data, canEdit, onApply, activ
   }, [open, data, activeTab]);
 
   const handleApply = () => {
-    if (!canEdit) return;
     try {
       const parsed = JSON.parse(text);
       const err = validateScenario(parsed);
@@ -148,7 +147,7 @@ export default function LeftPanel({ open, onClose, data, canEdit, onApply, activ
         const parsed = JSON.parse(ev.target.result);
         const err = validateScenario(parsed);
         if (err) { setError(err); return; }
-        if (canEdit) onApply(parsed);
+        onApply(parsed);
         onClose();
       } catch (ex) {
         setError('Import error: ' + ex.message);
@@ -159,7 +158,7 @@ export default function LeftPanel({ open, onClose, data, canEdit, onApply, activ
   };
 
   const handleThemeChange = (newTheme) => {
-    if (!canEdit || !data) return;
+    if (!data) return;
     onApply({ ...data, theme: newTheme });
   };
 
@@ -185,15 +184,11 @@ export default function LeftPanel({ open, onClose, data, canEdit, onApply, activ
           <div className="panel-actions">
             {activeTab === 'editor' && (
               <>
-                {canEdit && (
-                  <button className="panel-btn" onClick={() => fileRef.current?.click()}>
-                    Import
-                  </button>
-                )}
+                <button className="panel-btn" onClick={() => fileRef.current?.click()}>
+                  Import
+                </button>
                 <button className="panel-btn" onClick={handleExportJSON}>Export</button>
-                {canEdit && (
-                  <button className="panel-btn primary" onClick={handleApply}>Apply</button>
-                )}
+                <button className="panel-btn primary" onClick={handleApply}>Apply</button>
               </>
             )}
             <button className="panel-close" onClick={onClose}>✕</button>
@@ -215,16 +210,15 @@ export default function LeftPanel({ open, onClose, data, canEdit, onApply, activ
               onChange={e => { setText(e.target.value); setDirty(true); setError(null); }}
               onKeyDown={handleKeyDown}
               spellCheck={false}
-              readOnly={!canEdit}
             />
             <div className="editor-status">
               <span>
                 {error
                   ? <span style={{ color: '#CF4A00' }}>{error}</span>
-                  : canEdit ? '⌘+Enter to apply' : 'Read-only (sign in to edit)'}
+                  : '⌘+Enter to apply'}
               </span>
               <span>
-                {dirty && canEdit && (
+                {dirty && (
                   <span style={{ color: '#CF4A00' }}>● Unsaved</span>
                 )}
               </span>

@@ -322,6 +322,7 @@ export default function ToolPage() {
         currentId={scenarioId}
         onSelect={handleLoadScenario}
         onNew={handleNewScenario}
+        onImportJSON={() => { setDrawerOpen(false); setPanelTab('editor'); setPanelOpen(true); }}
       />
     </div>
   );
