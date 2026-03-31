@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabase } from '@/lib/supabase-browser';
 import sampleScenario from '@/public/scenario_data.json';
@@ -10,6 +10,31 @@ import PhaseSection from '@/components/PhaseSection';
 import LeftPanel from '@/components/LeftPanel';
 import ScenarioDrawer from '@/components/ScenarioDrawer';
 
+// ============================================================
+// THEME APPLICATION
+// ============================================================
+const THEME_VAR_MAP = {
+  headerBg1: '--infinite-blue', headerBg2: '--mid-teal', headerAccent: '--wasabi',
+  toolPillBg: '--tool-pill-bg', toolPillColor: '--tool-pill-color',
+  toolPillBorder: '--tool-pill-border',
+  tooltipBg: '--tooltip-bg', tooltipAccent: '--tooltip-accent',
+  pageBg: '--page-bg', cardBg: '--surface-1', cardBorder: '--border-subtle',
+  textPrimary: '--text-primary', textSecondary: '--text-secondary', textMuted: '--text-muted'
+};
+
+function applyTheme(theme) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  Object.entries(THEME_VAR_MAP).forEach(([key, cssVar]) => {
+    if (theme && theme[key]) root.style.setProperty(cssVar, theme[key]);
+  });
+  if (theme?.fontMain) root.style.setProperty('--font-main', "'" + theme.fontMain + "', Arial, sans-serif");
+  if (theme?.fontMono) root.style.setProperty('--font-mono', "'" + theme.fontMono + "', 'Courier New', monospace");
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
 function collectStepIds(phases) {
   const ids = [];
   function walk(steps) {
@@ -23,9 +48,11 @@ function collectStepIds(phases) {
   return ids;
 }
 
-export default function ToolPage() {
+// ============================================================
+// MAIN TOOL COMPONENT
+// ============================================================
+function ToolContent() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -34,7 +61,7 @@ export default function ToolPage() {
   const [scenarioId, setScenarioId] = useState(null);
   const [isSample, setIsSample] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('saved'); // saved | saving | error | unsaved
+  const [saveStatus, setSaveStatus] = useState('saved');
 
   // UI state
   const [expandedSteps, setExpandedSteps] = useState(new Set());
@@ -45,19 +72,15 @@ export default function ToolPage() {
   const [presenting, setPresenting] = useState(false);
   const [presStep, setPresStep] = useState(0);
 
-  // Auto-save ref
   const saveTimerRef = useRef(null);
-
-  // Determine scenario ID from URL params
   const urlId = params?.id?.[0] || null;
 
-  // Load scenario
+  // ---- Load scenario ----
   useEffect(() => {
     if (authLoading) return;
 
     const loadScenario = async () => {
       if (urlId) {
-        // Load from Supabase
         const supabase = getSupabase();
         const { data, error } = await supabase
           .from('scenarios')
@@ -66,7 +89,6 @@ export default function ToolPage() {
           .single();
 
         if (error || !data) {
-          // Fallback to sample
           setScenario(sampleScenario);
           setIsSample(true);
           setCanEdit(false);
@@ -78,7 +100,6 @@ export default function ToolPage() {
         setScenarioId(data.id);
         setIsSample(false);
 
-        // Check edit permission
         if (user && data.owner_id === user.id) {
           setCanEdit(true);
         } else if (user && data.team_id) {
@@ -93,30 +114,30 @@ export default function ToolPage() {
           setCanEdit(false);
         }
       } else {
-        // No ID - show sample
         setScenario(sampleScenario);
         setIsSample(true);
         setCanEdit(false);
+        setScenarioId(null);
       }
     };
 
     loadScenario();
   }, [urlId, user, authLoading]);
 
-  // Auto-save to Supabase (debounced)
+  // ---- Apply theme when scenario changes ----
+  useEffect(() => {
+    if (scenario?.theme) applyTheme(scenario.theme);
+  }, [scenario]);
+
+  // ---- Auto-save ----
   const saveToSupabase = useCallback(async (data) => {
     if (!scenarioId || !canEdit) return;
     setSaveStatus('saving');
     const supabase = getSupabase();
     const { error } = await supabase
       .from('scenarios')
-      .update({
-        title: data.title || 'Untitled',
-        subtitle: data.subtitle || '',
-        data: data,
-      })
+      .update({ title: data.title || 'Untitled', subtitle: data.subtitle || '', data })
       .eq('id', scenarioId);
-
     setSaveStatus(error ? 'error' : 'saved');
   }, [scenarioId, canEdit]);
 
@@ -129,7 +150,37 @@ export default function ToolPage() {
     }
   }, [scenarioId, canEdit, saveToSupabase]);
 
-  // Presentation mode
+  // ---- Save as new (for sample or fork) ----
+  const handleSaveAsNew = useCallback(async (teamId) => {
+    if (!user || !scenario) return;
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('scenarios')
+      .insert({
+        title: scenario.title || 'Untitled',
+        subtitle: scenario.subtitle || '',
+        data: scenario,
+        owner_id: user.id,
+        team_id: teamId || null,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      router.push('/tool/' + data.id);
+    }
+  }, [user, scenario, router]);
+
+  // ---- Delete scenario ----
+  const handleDeleteScenario = useCallback(async (id) => {
+    const supabase = getSupabase();
+    await supabase.from('scenarios').delete().eq('id', id);
+    if (id === scenarioId) {
+      router.push('/tool');
+    }
+  }, [scenarioId, router]);
+
+  // ---- Presentation mode ----
   const stepIds = useMemo(() => scenario ? collectStepIds(scenario.phases || []) : [], [scenario]);
   const totalSteps = stepIds.length;
 
@@ -199,7 +250,7 @@ export default function ToolPage() {
   };
 
   const handleTitleChange = (newTitle) => {
-    if (!canEdit || !scenario) return;
+    if (!scenario) return;
     handleScenarioChange({ ...scenario, title: newTitle });
   };
 
@@ -208,7 +259,7 @@ export default function ToolPage() {
     router.push('/tool/' + id);
   };
 
-  const handleNewScenario = async () => {
+  const handleNewScenario = async (teamId) => {
     if (!user) { router.push('/auth/login?redirect=/tool'); return; }
     const supabase = getSupabase();
     const blank = {
@@ -226,7 +277,13 @@ export default function ToolPage() {
     };
     const { data, error } = await supabase
       .from('scenarios')
-      .insert({ title: blank.title, subtitle: '', data: blank, owner_id: user.id })
+      .insert({
+        title: blank.title,
+        subtitle: '',
+        data: blank,
+        owner_id: user.id,
+        team_id: teamId || null,
+      })
       .select()
       .single();
 
@@ -238,8 +295,8 @@ export default function ToolPage() {
 
   if (!scenario) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--text-muted)' }}>
-        Loading...
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--text-muted)', fontSize: 15 }}>
+        Loading scenario...
       </div>
     );
   }
@@ -275,6 +332,7 @@ export default function ToolPage() {
         onPrint={handlePrint}
         onOpenTheme={() => { setPanelTab('theme'); setPanelOpen(true); }}
         onTitleChange={handleTitleChange}
+        onSaveAsNew={user && isSample ? () => handleSaveAsNew(null) : null}
         user={user}
       />
 
@@ -296,6 +354,14 @@ export default function ToolPage() {
           <div className="notes-footer">
             <div className="notes-label">Notes</div>
             {scenario.notes}
+          </div>
+        )}
+
+        {(scenario.phases || []).length === 0 && (
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>📋</div>
+            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>Empty scenario</div>
+            <div style={{ fontSize: 14 }}>Open the DATA panel on the left to paste or import scenario JSON.</div>
           </div>
         )}
       </div>
@@ -321,9 +387,25 @@ export default function ToolPage() {
         onClose={() => setDrawerOpen(false)}
         currentId={scenarioId}
         onSelect={handleLoadScenario}
-        onNew={handleNewScenario}
+        onNew={() => handleNewScenario(null)}
+        onDelete={handleDeleteScenario}
         onImportJSON={() => { setDrawerOpen(false); setPanelTab('editor'); setPanelOpen(true); }}
       />
     </div>
+  );
+}
+
+// ============================================================
+// PAGE WRAPPER WITH SUSPENSE
+// ============================================================
+export default function ToolPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--text-muted)', fontSize: 15 }}>
+        Loading...
+      </div>
+    }>
+      <ToolContent />
+    </Suspense>
   );
 }

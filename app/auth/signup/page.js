@@ -28,6 +28,7 @@ export default function SignupPage() {
       setLoading(false);
     } else {
       router.push('/tool');
+      router.refresh();
     }
   };
 

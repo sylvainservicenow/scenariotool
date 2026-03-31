@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { getSupabase } from '@/lib/supabase-browser';
 import TeamManager from './TeamManager';
 
-export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onNew, onImportJSON }) {
+export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onNew, onDelete, onImportJSON }) {
   const { user } = useAuth();
   const [scenarios, setScenarios] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -15,23 +15,22 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
   const [managingTeam, setManagingTeam] = useState(null);
   const [newTeamName, setNewTeamName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const supabase = getSupabase();
 
-    // Personal scenarios
     const { data: personal } = await supabase
       .from('scenarios')
-      .select('id, title, subtitle, updated_at')
+      .select('id, title, subtitle, updated_at, owner_id')
       .is('team_id', null)
       .eq('owner_id', user.id)
       .order('updated_at', { ascending: false });
 
     setScenarios(personal || []);
 
-    // Teams
     const { data: memberships } = await supabase
       .from('team_members')
       .select('team_id, role, teams(id, name, invite_code)')
@@ -43,12 +42,11 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
     }));
     setTeams(teamList);
 
-    // Team scenarios
     const ts = {};
     for (const team of teamList) {
       const { data: teamSc } = await supabase
         .from('scenarios')
-        .select('id, title, subtitle, updated_at')
+        .select('id, title, subtitle, updated_at, owner_id')
         .eq('team_id', team.id)
         .order('updated_at', { ascending: false });
       ts[team.id] = teamSc || [];
@@ -59,18 +57,27 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
 
   useEffect(() => {
     if (open && user) loadData();
+    if (open) setConfirmDelete(null);
   }, [open, user, loadData]);
 
   const handleCreateTeam = async () => {
     if (!newTeamName.trim() || creating) return;
     setCreating(true);
     const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('create_team', { team_name: newTeamName.trim() });
-    if (!error) {
-      setNewTeamName('');
-      loadData();
-    }
+    await supabase.rpc('create_team', { team_name: newTeamName.trim() });
+    setNewTeamName('');
     setCreating(false);
+    loadData();
+  };
+
+  const handleDelete = async (id) => {
+    if (confirmDelete !== id) {
+      setConfirmDelete(id);
+      return;
+    }
+    setConfirmDelete(null);
+    if (onDelete) await onDelete(id);
+    loadData();
   };
 
   const formatDate = (d) => {
@@ -84,6 +91,36 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
     if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
     return date.toLocaleDateString();
   };
+
+  const ScenarioItem = ({ s, isOwner }) => (
+    <div
+      className={'drawer-item' + (s.id === currentId ? ' active' : '')}
+      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+    >
+      <button
+        style={{ flex: 1, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-main)' }}
+        onClick={() => onSelect(s.id)}
+      >
+        <div className="drawer-item-title">{s.title}</div>
+        <div className="drawer-item-sub">{formatDate(s.updated_at)}</div>
+      </button>
+      {isOwner && (
+        <button
+          onClick={() => handleDelete(s.id)}
+          style={{
+            flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, color: confirmDelete === s.id ? '#CF4A00' : 'var(--text-muted)',
+            fontFamily: 'var(--font-main)', fontWeight: confirmDelete === s.id ? 600 : 400,
+            padding: '4px 6px', borderRadius: 4,
+            transition: 'all 0.15s',
+          }}
+          title={confirmDelete === s.id ? 'Click again to confirm' : 'Delete'}
+        >
+          {confirmDelete === s.id ? 'Confirm?' : '×'}
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -112,16 +149,15 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
             <>
               <div className="drawer-section-label">Personal</div>
               {scenarios.map(s => (
-                <button
-                  key={s.id}
-                  className={'drawer-item' + (s.id === currentId ? ' active' : '')}
-                  onClick={() => onSelect(s.id)}
-                >
-                  <div className="drawer-item-title">{s.title}</div>
-                  <div className="drawer-item-sub">{formatDate(s.updated_at)}</div>
-                </button>
+                <ScenarioItem key={s.id} s={s} isOwner={s.owner_id === user?.id} />
               ))}
             </>
+          )}
+
+          {!loading && scenarios.length === 0 && teams.length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No scenarios yet. Create one or import a JSON file.
+            </div>
           )}
 
           {!loading && teams.map(team => (
@@ -136,14 +172,7 @@ export default function ScenarioDrawer({ open, onClose, currentId, onSelect, onN
                 </button>
               </div>
               {(teamScenarios[team.id] || []).map(s => (
-                <button
-                  key={s.id}
-                  className={'drawer-item' + (s.id === currentId ? ' active' : '')}
-                  onClick={() => onSelect(s.id)}
-                >
-                  <div className="drawer-item-title">{s.title}</div>
-                  <div className="drawer-item-sub">{formatDate(s.updated_at)}</div>
-                </button>
+                <ScenarioItem key={s.id} s={s} isOwner={s.owner_id === user?.id} />
               ))}
               {(!teamScenarios[team.id] || teamScenarios[team.id].length === 0) && (
                 <div style={{ padding: '6px 20px', fontSize: 12, color: 'var(--text-muted)' }}>
