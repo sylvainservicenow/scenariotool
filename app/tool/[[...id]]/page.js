@@ -38,9 +38,11 @@ function ToolContent() {
 
   const [scenario, setScenario] = useState(null);
   const [scenarioId, setScenarioId] = useState(null);
+  const [scenarioTeamId, setScenarioTeamId] = useState(null);
   const [isSample, setIsSample] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [userTeams, setUserTeams] = useState([]);
 
   const [expandedSteps, setExpandedSteps] = useState(new Set());
   const [collapsedPhases, setCollapsedPhases] = useState(new Set());
@@ -53,6 +55,24 @@ function ToolContent() {
   const saveTimer = useRef(null);
   const urlId = params?.id?.[0] || null;
 
+  // Load user teams (for assignment dropdown)
+  const loadUserTeams = useCallback(async () => {
+    if (!user) { setUserTeams([]); return; }
+    try {
+      const sb = getSupabase();
+      const { data: memberships } = await sb
+        .from('team_members')
+        .select('team_id, role')
+        .eq('user_id', user.id);
+      const teams = [];
+      for (const m of (memberships || [])) {
+        const { data: team } = await sb.from('teams').select('id, name').eq('id', m.team_id).single();
+        if (team) teams.push({ ...team, role: m.role });
+      }
+      setUserTeams(teams);
+    } catch (e) { console.warn('Load teams error:', e); }
+  }, [user]);
+
   // Load scenario
   useEffect(() => {
     if (authLoading) return;
@@ -63,10 +83,10 @@ function ToolContent() {
           const { data, error } = await sb.from('scenarios').select('*').eq('id', urlId).single();
           if (error || !data) {
             console.warn('Scenario load error:', error);
-            setScenario(sampleScenario); setIsSample(true); setCanEdit(false); return;
+            setScenario(sampleScenario); setIsSample(true); setCanEdit(false); setScenarioTeamId(null); return;
           }
           setScenario({ ...data.data, title: data.title, subtitle: data.subtitle });
-          setScenarioId(data.id); setIsSample(false);
+          setScenarioId(data.id); setScenarioTeamId(data.team_id); setIsSample(false);
           if (user && data.owner_id === user.id) { setCanEdit(true); }
           else if (user && data.team_id) {
             const { data: mem } = await sb.from('team_members').select('role').eq('team_id', data.team_id).eq('user_id', user.id).single();
@@ -77,11 +97,12 @@ function ToolContent() {
           setScenario(sampleScenario); setIsSample(true); setCanEdit(false);
         }
       } else {
-        setScenario(sampleScenario); setIsSample(true); setCanEdit(false); setScenarioId(null);
+        setScenario(sampleScenario); setIsSample(true); setCanEdit(false); setScenarioId(null); setScenarioTeamId(null);
       }
     };
     load();
-  }, [urlId, user, authLoading]);
+    loadUserTeams();
+  }, [urlId, user, authLoading, loadUserTeams]);
 
   useEffect(() => { if (scenario?.theme) applyTheme(scenario.theme); }, [scenario]);
 
@@ -107,6 +128,18 @@ function ToolContent() {
     }
   }, [scenarioId, canEdit, saveToDb]);
 
+  // Assign/unassign team
+  const handleAssignTeam = useCallback(async (teamId) => {
+    if (!scenarioId || !canEdit) return;
+    try {
+      const { error } = await getSupabase().from('scenarios')
+        .update({ team_id: teamId })
+        .eq('id', scenarioId);
+      if (error) { console.error('Assign team error:', error); alert('Failed: ' + error.message); return; }
+      setScenarioTeamId(teamId);
+    } catch (e) { console.error('Assign team exception:', e); }
+  }, [scenarioId, canEdit]);
+
   // Save as new
   const handleSaveAsNew = useCallback(async () => {
     if (!user || !scenario) return;
@@ -119,7 +152,7 @@ function ToolContent() {
     } catch (e) { console.error('Save as new exception:', e); }
   }, [user, scenario, router]);
 
-  // Delete
+  // Delete scenario
   const handleDelete = useCallback(async (id) => {
     try {
       const { error } = await getSupabase().from('scenarios').delete().eq('id', id);
@@ -134,10 +167,8 @@ function ToolContent() {
     const blank = {
       title: 'New Scenario', subtitle: '', label: 'POC Scenario', notes: '',
       statusLabels: {
-        live: { label: 'Live', color: '#81B532' },
-        mixed: { label: 'Live + Mock', color: '#CF4A00' },
-        'poc-new': { label: 'POC New', color: '#52B8FF' },
-        'agent-logic': { label: 'Agent Logic', color: '#7661FF' }
+        live: { label: 'Live', color: '#81B532' }, mixed: { label: 'Live + Mock', color: '#CF4A00' },
+        'poc-new': { label: 'POC New', color: '#52B8FF' }, 'agent-logic': { label: 'Agent Logic', color: '#7661FF' }
       },
       phases: []
     };
@@ -210,10 +241,7 @@ function ToolContent() {
     <div>
       {/* Left-edge DATA tab */}
       {!panelOpen && !presenting && (
-        <div className="editor-tab no-print"
-          onClick={() => { setPanelTab('editor'); setPanelOpen(true); }}>
-          DATA
-        </div>
+        <div className="editor-tab no-print" onClick={() => { setPanelTab('editor'); setPanelOpen(true); }}>DATA</div>
       )}
 
       <Header
@@ -226,6 +254,9 @@ function ToolContent() {
         onTitleChange={t => handleChange({ ...scenario, title: t })}
         onSaveAsNew={user && isSample ? handleSaveAsNew : null}
         user={user}
+        scenarioTeamId={scenarioTeamId}
+        userTeams={userTeams}
+        onAssignTeam={!isSample && canEdit ? handleAssignTeam : null}
       />
 
       <div className="main-content">
@@ -239,7 +270,7 @@ function ToolContent() {
           <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>📋</div>
             <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>Empty scenario</div>
-            <div style={{ fontSize: 14 }}>Click DATA on the left to open the editor and paste or import scenario JSON.</div>
+            <div style={{ fontSize: 14 }}>Click DATA on the left or the data icon in the header to open the editor.</div>
           </div>
         )}
       </div>
@@ -249,7 +280,7 @@ function ToolContent() {
       <LeftPanel open={panelOpen} onClose={() => setPanelOpen(false)}
         data={scenario} onApply={handleChange} activeTab={panelTab} setActiveTab={setPanelTab} />
 
-      <ScenarioDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} currentId={scenarioId}
+      <ScenarioDrawer open={drawerOpen} onClose={() => { setDrawerOpen(false); loadUserTeams(); }} currentId={scenarioId}
         onSelect={id => { setDrawerOpen(false); router.push('/tool/' + id); }}
         onNew={handleNewScenario} onDelete={handleDelete} />
     </div>

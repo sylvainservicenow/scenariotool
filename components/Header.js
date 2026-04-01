@@ -5,28 +5,37 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase-browser';
 
+// Icons
 const SvgFolder = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
-const SvgCode = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+const SvgDatabase = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
 const SvgPlay = () => <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
 const SvgPrint = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
 const SvgPalette = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="2" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>;
 const SvgSave = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
+const SvgUsers = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
 
 export default function Header({
   scenario, isSample, canEdit, saveStatus, presenting,
   onPresent, onExitPresent, onPrint, onOpenTheme, onOpenData, onOpenFiles,
-  onTitleChange, onSaveAsNew, user
+  onTitleChange, onSaveAsNew, user,
+  scenarioTeamId, userTeams, onAssignTeam
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
   const titleRef = useRef(null);
   const dropdownRef = useRef(null);
+  const teamMenuRef = useRef(null);
   const router = useRouter();
 
   useEffect(() => { if (editingTitle && titleRef.current) titleRef.current.focus(); }, [editingTitle]);
+
   useEffect(() => {
-    const handler = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false); };
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false);
+      if (teamMenuRef.current && !teamMenuRef.current.contains(e.target)) setTeamMenuOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
@@ -36,8 +45,7 @@ export default function Header({
   const handleTitleKeyDown = (e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingTitle(false); };
 
   const handleSignOut = async () => {
-    const supabase = getSupabase();
-    await supabase.auth.signOut();
+    await getSupabase().auth.signOut();
     setDropdownOpen(false);
     router.push('/');
     router.refresh();
@@ -51,17 +59,13 @@ export default function Header({
   };
 
   const saveLabels = { saved: 'Saved', saving: 'Saving...', error: 'Save failed', unsaved: 'Unsaved' };
+  const currentTeamName = userTeams?.find(t => t.id === scenarioTeamId)?.name;
 
   return (
     <div className={'header-bar no-print' + (presenting ? ' compact' : '')}>
       <div className="header-inner">
-        {/* Left: files button + scenario info */}
+        {/* Left: title info */}
         <div className="header-left">
-          {user && !presenting && (
-            <button className="header-files-btn" onClick={onOpenFiles} title="Scenarios">
-              <SvgFolder />
-            </button>
-          )}
           <div className="header-info">
             {scenario.label && <div className="header-label">{scenario.label}</div>}
             {editingTitle ? (
@@ -108,8 +112,47 @@ export default function Header({
                 </button>
               )}
 
-              <button className="header-btn" onClick={onOpenData} title="Edit JSON data">
-                <SvgCode />
+              {/* Team assignment (only for saved, owned scenarios) */}
+              {!isSample && canEdit && user && onAssignTeam && (
+                <div style={{ position: 'relative' }} ref={teamMenuRef}>
+                  <button className="header-btn" onClick={() => setTeamMenuOpen(!teamMenuOpen)}
+                    title={currentTeamName ? 'Team: ' + currentTeamName : 'Assign to team'}
+                    style={currentTeamName ? { borderColor: 'rgba(118,97,255,0.4)', color: 'rgba(200,180,255,0.9)' } : undefined}>
+                    <SvgUsers />
+                    <span className="btn-label">{currentTeamName || 'Team'}</span>
+                  </button>
+                  {teamMenuOpen && (
+                    <div className="user-dropdown" style={{ right: 0, width: 200 }}>
+                      <button className="user-dropdown-item"
+                        style={!scenarioTeamId ? { fontWeight: 600, color: 'var(--text-primary)' } : undefined}
+                        onClick={() => { onAssignTeam(null); setTeamMenuOpen(false); }}>
+                        Personal (no team)
+                      </button>
+                      {(userTeams || []).map(t => (
+                        <button key={t.id} className="user-dropdown-item"
+                          style={scenarioTeamId === t.id ? { fontWeight: 600, color: 'var(--text-primary)' } : undefined}
+                          onClick={() => { onAssignTeam(t.id); setTeamMenuOpen(false); }}>
+                          {t.name} {scenarioTeamId === t.id && '✓'}
+                        </button>
+                      ))}
+                      {(!userTeams || userTeams.length === 0) && (
+                        <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
+                          No teams yet. Create one in the Scenarios drawer.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Folder + Data grouped */}
+              {user && (
+                <button className="header-btn" onClick={onOpenFiles} title="Scenarios">
+                  <SvgFolder />
+                </button>
+              )}
+              <button className="header-btn" onClick={onOpenData} title="Edit scenario data">
+                <SvgDatabase />
               </button>
 
               <div className="header-divider" />
