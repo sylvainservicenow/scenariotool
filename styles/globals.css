@@ -164,6 +164,18 @@ body { font-family: var(--font-main); background: var(--page-bg); color: var(--t
 }
 .header-signin:hover { background: rgba(255,255,255,0.12); color: white; }
 
+/* ============ LEFT-EDGE DATA TAB ============ */
+.editor-tab {
+  position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 199;
+  writing-mode: vertical-rl; text-orientation: mixed;
+  background: var(--infinite-blue); color: rgba(255,255,255,0.7);
+  padding: 16px 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; cursor: pointer; border-radius: 0 8px 8px 0;
+  border: 1px solid rgba(255,255,255,0.1); border-left: none;
+  transition: all 0.2s; box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+}
+.editor-tab:hover { background: #054A6E; color: white; padding-right: 11px; }
+
 /* ============ LEFT PANEL (DATA/THEME) ============ */
 .left-panel-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.25s; backdrop-filter: blur(2px); }
 .left-panel-overlay.open { opacity: 1; pointer-events: all; }
@@ -417,4 +429,5 @@ body { font-family: var(--font-main); background: var(--page-bg); color: var(--t
   .main-content { padding: 12px 10px 60px; }
   .branch-paths { flex-direction: column; }
   .header-btn .btn-label { display: none; }
+  .editor-tab { padding: 12px 6px; font-size: 10px; }
 }
