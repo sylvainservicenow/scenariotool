@@ -3,9 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getSupabase } from '@/lib/supabase-browser';
+import { useAuth } from '@/lib/auth-context';
 
-// Icons
 const SvgFolder = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
 const SvgDatabase = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
 const SvgPlay = () => <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
@@ -17,9 +16,10 @@ const SvgUsers = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 export default function Header({
   scenario, isSample, canEdit, saveStatus, presenting,
   onPresent, onExitPresent, onPrint, onOpenTheme, onOpenData, onOpenFiles,
-  onTitleChange, onSaveAsNew, user,
+  onTitleChange, onSaveAsNew,
   scenarioTeamId, userTeams, onAssignTeam
 }) {
+  const { user, signOut } = useAuth();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -30,25 +30,22 @@ export default function Header({
   const router = useRouter();
 
   useEffect(() => { if (editingTitle && titleRef.current) titleRef.current.focus(); }, [editingTitle]);
-
   useEffect(() => {
-    const handler = (e) => {
+    const h = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false);
       if (teamMenuRef.current && !teamMenuRef.current.contains(e.target)) setTeamMenuOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, []);
 
   const handleTitleClick = () => { if (!canEdit) return; setTitleDraft(scenario.title || ''); setEditingTitle(true); };
   const handleTitleBlur = () => { setEditingTitle(false); if (titleDraft.trim() && titleDraft !== scenario.title) onTitleChange(titleDraft.trim()); };
-  const handleTitleKeyDown = (e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingTitle(false); };
 
   const handleSignOut = async () => {
-    await getSupabase().auth.signOut();
     setDropdownOpen(false);
+    await signOut();
     router.push('/');
-    router.refresh();
   };
 
   const getInitials = () => {
@@ -64,108 +61,68 @@ export default function Header({
   return (
     <div className={'header-bar no-print' + (presenting ? ' compact' : '')}>
       <div className="header-inner">
-        {/* Left: title info */}
         <div className="header-left">
           <div className="header-info">
             {scenario.label && <div className="header-label">{scenario.label}</div>}
             {editingTitle ? (
               <input ref={titleRef} className="header-title-input" value={titleDraft}
-                onChange={e => setTitleDraft(e.target.value)} onBlur={handleTitleBlur} onKeyDown={handleTitleKeyDown} />
+                onChange={e => setTitleDraft(e.target.value)} onBlur={handleTitleBlur}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingTitle(false); }} />
             ) : (
-              <div className="header-title" onClick={handleTitleClick} style={canEdit ? { cursor: 'text' } : undefined}>
-                {scenario.title}
-              </div>
+              <div className="header-title" onClick={handleTitleClick} style={canEdit ? { cursor: 'text' } : undefined}>{scenario.title}</div>
             )}
             {!presenting && scenario.subtitle && <div className="header-subtitle">{scenario.subtitle}</div>}
           </div>
         </div>
 
-        {/* Center: status legend */}
         {!presenting && scenario.statusLabels && (
           <div className="header-center">
             <div className="status-legend">
               {Object.entries(scenario.statusLabels).map(([key, sl]) => (
-                <div key={key} className="status-legend-item">
-                  <span className="status-dot" style={{ background: sl.color }} />
-                  <span>{sl.label}</span>
-                </div>
+                <div key={key} className="status-legend-item"><span className="status-dot" style={{ background: sl.color }}/><span>{sl.label}</span></div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Right: actions */}
         <div className="header-right">
           {!isSample && canEdit && !presenting && (
-            <div className={'save-indicator' + (saveStatus === 'saving' ? ' saving' : '') + (saveStatus === 'error' ? ' error' : '')}>
-              {saveLabels[saveStatus] || ''}
-            </div>
+            <div className={'save-indicator' + (saveStatus === 'saving' ? ' saving' : '') + (saveStatus === 'error' ? ' error' : '')}>{saveLabels[saveStatus] || ''}</div>
           )}
 
           {presenting ? (
             <button className="header-btn" onClick={onExitPresent}>✕ Exit</button>
           ) : (
             <>
-              {onSaveAsNew && (
-                <button className="header-btn accent" onClick={onSaveAsNew}>
-                  <SvgSave /> <span className="btn-label">Save as mine</span>
-                </button>
-              )}
+              {onSaveAsNew && <button className="header-btn accent" onClick={onSaveAsNew}><SvgSave /> <span className="btn-label">Save as mine</span></button>}
 
-              {/* Team assignment (only for saved, owned scenarios) */}
               {!isSample && canEdit && user && onAssignTeam && (
                 <div style={{ position: 'relative' }} ref={teamMenuRef}>
                   <button className="header-btn" onClick={() => setTeamMenuOpen(!teamMenuOpen)}
                     title={currentTeamName ? 'Team: ' + currentTeamName : 'Assign to team'}
                     style={currentTeamName ? { borderColor: 'rgba(118,97,255,0.4)', color: 'rgba(200,180,255,0.9)' } : undefined}>
-                    <SvgUsers />
-                    <span className="btn-label">{currentTeamName || 'Team'}</span>
+                    <SvgUsers /><span className="btn-label">{currentTeamName || 'Team'}</span>
                   </button>
                   {teamMenuOpen && (
                     <div className="user-dropdown" style={{ right: 0, width: 200 }}>
-                      <button className="user-dropdown-item"
-                        style={!scenarioTeamId ? { fontWeight: 600, color: 'var(--text-primary)' } : undefined}
-                        onClick={() => { onAssignTeam(null); setTeamMenuOpen(false); }}>
-                        Personal (no team)
-                      </button>
+                      <button className="user-dropdown-item" style={!scenarioTeamId ? { fontWeight: 600 } : undefined}
+                        onClick={() => { onAssignTeam(null); setTeamMenuOpen(false); }}>Personal {!scenarioTeamId && '✓'}</button>
                       {(userTeams || []).map(t => (
-                        <button key={t.id} className="user-dropdown-item"
-                          style={scenarioTeamId === t.id ? { fontWeight: 600, color: 'var(--text-primary)' } : undefined}
-                          onClick={() => { onAssignTeam(t.id); setTeamMenuOpen(false); }}>
-                          {t.name} {scenarioTeamId === t.id && '✓'}
-                        </button>
+                        <button key={t.id} className="user-dropdown-item" style={scenarioTeamId === t.id ? { fontWeight: 600 } : undefined}
+                          onClick={() => { onAssignTeam(t.id); setTeamMenuOpen(false); }}>{t.name} {scenarioTeamId === t.id && '✓'}</button>
                       ))}
-                      {(!userTeams || userTeams.length === 0) && (
-                        <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
-                          No teams yet. Create one in the Scenarios drawer.
-                        </div>
-                      )}
+                      {(!userTeams || !userTeams.length) && <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-muted)' }}>No teams yet</div>}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Folder + Data grouped */}
-              {user && (
-                <button className="header-btn" onClick={onOpenFiles} title="Scenarios">
-                  <SvgFolder />
-                </button>
-              )}
-              <button className="header-btn" onClick={onOpenData} title="Edit scenario data">
-                <SvgDatabase />
-              </button>
-
+              {user && <button className="header-btn" onClick={onOpenFiles} title="Scenarios"><SvgFolder /></button>}
+              <button className="header-btn" onClick={onOpenData} title="Edit data"><SvgDatabase /></button>
               <div className="header-divider" />
-
-              <button className="header-btn" onClick={onPresent}>
-                <SvgPlay /> <span className="btn-label">Present</span>
-              </button>
-              <button className="header-btn" onClick={onPrint}>
-                <SvgPrint /> <span className="btn-label">Print</span>
-              </button>
-              <button className="header-btn" onClick={onOpenTheme} title="Theme">
-                <SvgPalette />
-              </button>
+              <button className="header-btn" onClick={onPresent}><SvgPlay /> <span className="btn-label">Present</span></button>
+              <button className="header-btn" onClick={onPrint}><SvgPrint /> <span className="btn-label">Print</span></button>
+              <button className="header-btn" onClick={onOpenTheme} title="Theme"><SvgPalette /></button>
             </>
           )}
 
@@ -176,17 +133,12 @@ export default function Header({
               <div className="user-avatar" onClick={() => setDropdownOpen(!dropdownOpen)}>{getInitials()}</div>
               {dropdownOpen && (
                 <div className="user-dropdown">
-                  <div className="user-dropdown-info">
-                    {user.user_metadata?.display_name || 'User'}
-                    <small>{user.email}</small>
-                  </div>
+                  <div className="user-dropdown-info">{user.user_metadata?.display_name || 'User'}<small>{user.email}</small></div>
                   <button className="user-dropdown-item" onClick={handleSignOut}>Sign out</button>
                 </div>
               )}
             </div>
-          ) : (
-            !presenting && <Link href="/auth/login" className="header-signin">Sign in</Link>
-          )}
+          ) : !presenting && <Link href="/auth/login" className="header-signin">Sign in</Link>}
         </div>
       </div>
     </div>
